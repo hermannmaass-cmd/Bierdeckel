@@ -29,6 +29,9 @@
     header{display:flex; align-items:center; gap:12px; justify-content:space-between; margin-bottom:16px}
     header .left{display:flex; align-items:center; gap:12px}
     h1{font-size:28px; margin:0}
+    <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4da3ff">
+
 
     .controls{display:flex; align-items:center; gap:12px}
     .btn{background:var(--accent); color:#051028; border:none; padding:12px 16px; border-radius:12px; font-weight:700; cursor:pointer; box-shadow:var(--shadow)}
@@ -149,7 +152,7 @@ function addRow(name = '', amount = 0){
       pic.textContent = 'Kein Bild' 
       return
     }
-    const path = `bilder/${n}.jpg`
+     const path = `Bilder/${n}.jpg`
     img.src = path
     img.style.display='block'
     pic.classList.remove('fallback')
@@ -215,6 +218,15 @@ document.getElementById('btnAdd').addEventListener('click', ()=> addRow())
 btnSort.addEventListener('click', ()=>{ applySort(); saveState() })
 
 if(!restoreState()) addRow()
+<script>
+// PWA: Service Worker registrieren (mit Pages-Pfad)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () =>
+    navigator.serviceWorker.register("/Bierdeckel/sw.js", { scope: "/Bierdeckel/" })
+  );
+}
+</script>
+
 </script>
 </body>
 </html>
