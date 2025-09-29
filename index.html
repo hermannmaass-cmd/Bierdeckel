@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bierdeckel – Web</title>
+  <style>
+    :root{
+      --bg:#0b1324;/* dunkler Hintergrund */
+      --panel:#111a33;
+      --card:#192446;
+      --muted:#8aa0ff;
+      --accent:#4da3ff;
+      --ok:#22c55e;
+      --warn:#f59e0b;
+      --text:#e6ecff;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+      --radius:16px;
+      --gap-s:8px; --gap:12px; --gap-l:20px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font:16px/1.4 system-ui,Segoe UI,Roboto,Arial,sans-serif; background:linear-gradient(180deg,#0b1324,#060a16);
+      color:var(--text);
+    }
+    .wrap{max-width:1100px; margin:40px auto; padding:0 16px}
+
+    header{display:flex; align-items:center; gap:12px; justify-content:space-between; margin-bottom:16px}
+    header .left{display:flex; align-items:center; gap:12px}
+    h1{font-size:28px; margin:0}
+
+    .controls{display:flex; align-items:center; gap:12px}
+    .btn{background:var(--accent); color:#051028; border:none; padding:12px 16px; border-radius:12px; font-weight:700; cursor:pointer; box-shadow:var(--shadow)}
+    .btn:disabled{opacity:.6; cursor:not-allowed}
+
+    .board{background:var(--panel); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow)}
+    .rows{display:flex; flex-direction:column; gap:12px; max-height:65vh; overflow:auto; padding-right:6px}
+
+    .row{display:flex; align-items:center; gap:16px; background:var(--card); border-radius:var(--radius); padding:10px 12px}
+    .num{width:42px; text-align:center; font-weight:800; opacity:.9}
+    .pic{width:56px; height:56px; border-radius:50%; overflow:hidden; background:#0003; display:grid; place-items:center; color:#ccc; font-size:11px; text-align:center; line-height:1.2; padding:4px}
+    .pic img{width:100%; height:100%; object-fit:cover; display:block}
+    .pic.fallback{background:#2b3a78; color:#fff; font-weight:600; font-size:10px}
+
+    .name{position:relative}
+    .name input{width:200px; height:44px; padding:8px 12px; border-radius:10px; border:1px solid #2a3970; background:#0e1630; color:var(--text); font-weight:700}
+    .name datalist option{font-size:16px}
+
+    .btns{display:flex; gap:8px}
+    .btns button{min-width:74px; height:44px; border-radius:10px; border:none; background:#2b3a78; color:#eaf; font-weight:800; cursor:pointer}
+    .btns button:hover{filter:brightness(1.1)}
+
+    .amount{font:700 18px/1 system-ui; background:#fff; color:#111; padding:8px 12px; border-radius:10px; border:2px solid #cfd8ff}
+    .clear{margin-left:auto}
+    .clear button{height:44px; padding:0 14px; border:none; border-radius:10px; background:#2b3a78; color:#eaf; font-weight:800; cursor:pointer}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="left">
+      <h1>🍺 Bierdeckel</h1>
+    </div>
+    <div class="controls">
+      <button id="btnAdd" class="btn" title="Neue Zeile hinzufügen">+ Teilnehmer</button>
+      <button id="btnUndo" class="btn" title="Letzter Betrag rückgängig">↶ Undo</button>
+      <button id="btnSort" class="btn" title="Aktuell nach Betrag (↓) sortieren">Sortieren</button>
+    </div>
+  </header>
+
+  <section class="board">
+    <div id="rows" class="rows"></div>
+  </section>
+</div>
+
+<datalist id="names"></datalist>
+
+<script>
+const male = ["Björn","Chris","Eike","Erni","Florian","Grundmann","Heiko D.","Hermann","Ortmann","Kevin","Klaus","Kring","Marc","Marcell","Marco","Markus","Patrick","Ralf","Ronny","Rüdiger","Schupp","Valentin","Watz","Weitzel","Willi"]
+const female = ["Anita","Anja","Britta","Gesa","Jessica","Katja","Kerstin","Kim","Larissa","Lena","Mandy","Mona","Nadine","Nicole E","Nicole M","Sandra","Silke","Tina"]
+const names = [...male.sort(),"---------",...female.sort()]
+
+const namesDL = document.getElementById('names')
+names.forEach(n => namesDL.insertAdjacentHTML('beforeend', `<option value="${n}"></option>`))
+
+let undoStack = []
+let seq = 0
+
+function euro(n){ return n.toFixed(2).replace('.',',') + '€' }
+function parseEuro(txt){ return parseFloat(txt.replace('€','').replace('.','').replace(',','.')) || 0 }
+
+const rowsEl = document.getElementById('rows')
+const btnSort = document.getElementById('btnSort')
+
+const STORAGE_KEY = 'bierdeckel-state-v1'
+function getState(){
+  const rows = [...rowsEl.children].map(r=>({
+    name: r.querySelector('.name input').value || '',
+    amount: parseEuro(r.querySelector('.amount').textContent),
+    seq: parseInt(r.dataset.seq)||0
+  }))
+  return { rows, seq }
+}
+function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(getState())) }catch(e){} }
+function restoreState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if(!raw) return false
+    const st = JSON.parse(raw)
+    rowsEl.innerHTML = ''
+    seq = st.seq || 0
+    ;(st.rows||[]).forEach(r => addRow(r.name, r.amount))
+    renumber()
+    return true
+  }catch(e){ return false }
+}
+
+function addRow(name = '', amount = 0){
+  const id = ++seq
+  const row = document.createElement('div')
+  row.className = 'row'
+  row.dataset.seq = String(id)
+
+  row.innerHTML = `
+    <div class="num"></div>
+    <div class="pic"><img alt="avatar"></div>
+    <label class="name"><input list="names" placeholder="Name" value="${name}"></label>
+    <div class="btns">
+      <button data-inc="1">+1€</button>
+      <button data-inc="1.5">+1,50€</button>
+      <button data-inc="2">+2€</button>
+      <button data-inc="5">+5€</button>
+    </div>
+    <div class="amount">${euro(amount)}</div>
+    <div class="clear"><button class="btnClear">Clear All</button></div>
+  `
+
+  const amountEl = row.querySelector('.amount')
+  const nameInput = row.querySelector('input')
+  const img = row.querySelector('img')
+  const pic = row.querySelector('.pic')
+
+  function updateImage(){
+    const n = (nameInput.value||'').trim()
+    if(!n){
+      img.style.display='none'
+      pic.classList.add('fallback')
+      pic.textContent = 'Kein Bild' 
+      return
+    }
+    const path = `bilder/${n}.jpg`
+    img.src = path
+    img.style.display='block'
+    pic.classList.remove('fallback')
+    img.onerror = ()=>{
+      img.style.display='none'
+      pic.classList.add('fallback')
+      pic.textContent = 'Kein Bild' 
+    }
+  }
+
+  updateImage()
+
+  row.querySelectorAll('.btns button').forEach(btn =>{
+    btn.addEventListener('click', () => {
+      const inc = parseFloat(btn.dataset.inc)
+      const cur = parseEuro(amountEl.textContent)
+      amountEl.textContent = euro(cur + inc)
+      undoStack.push({ el: amountEl, amt: inc })
+      saveState()
+    })
+  })
+
+  row.querySelector('.btnClear').addEventListener('click', () =>{
+    row.remove()
+    renumber()
+    saveState()
+  })
+
+  nameInput.addEventListener('input', updateImage)
+
+  rowsEl.appendChild(row)
+  renumber()
+  saveState()
+}
+
+function renumber(){
+  [...rowsEl.children].forEach((r,i)=> r.querySelector('.num').textContent = String(i+1))
+}
+
+function applySort(){
+  const rows = [...rowsEl.children]
+  rows.sort((a,b)=>{
+    const av = parseEuro(a.querySelector('.amount').textContent)
+    const bv = parseEuro(b.querySelector('.amount').textContent)
+    if (bv !== av) return bv-av
+    return (parseInt(a.dataset.seq)||0) - (parseInt(b.dataset.seq)||0)
+  })
+  rows.forEach(r=> rowsEl.appendChild(r))
+  renumber()
+}
+
+const btnUndo = document.getElementById('btnUndo')
+btnUndo.addEventListener('click', ()=>{
+  const u = undoStack.pop()
+  if(!u) return
+  const cur = parseEuro(u.el.textContent)
+  u.el.textContent = euro(Math.max(0, cur - u.amt))
+  saveState()
+})
+
+document.getElementById('btnAdd').addEventListener('click', ()=> addRow())
+
+btnSort.addEventListener('click', ()=>{ applySort(); saveState() })
+
+if(!restoreState()) addRow()
+</script>
+</body>
+</html>
